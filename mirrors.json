@@ -41,7 +41,8 @@
     },
     {
       "source": "timothystewart6/k3s-ansible",
-      "subgroup": "ansible-roles"
+      "subgroup": "ansible-roles",
+      "target_name": "k3s-ansible-technotim"
     },
     {
       "source": "k3s-io/k3s-ansible",

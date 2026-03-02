@@ -127,7 +127,8 @@ jobs:
         run: |
           SOURCE="${{ matrix.source }}"
           SUBGROUP="${{ matrix.subgroup }}"
-          REPO_NAME="${SOURCE##*/}"
+          TARGET_NAME="${{ matrix.target_name }}"
+          REPO_NAME="${TARGET_NAME:-${SOURCE##*/}}"
 
           echo "repo_name=$REPO_NAME" >> "$GITHUB_OUTPUT"
           echo "subgroup=$SUBGROUP" >> "$GITHUB_OUTPUT"
