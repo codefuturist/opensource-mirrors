@@ -14,9 +14,86 @@ on:
 env:
   GITLAB_URL: https://gitlab.com
   GITLAB_USER: Koala101
+  GITLAB_GROUP: opensource-mirrors
 
 jobs:
-  # Build the matrix from mirrors.json
+  # ── Step 1: Ensure GitLab group + subgroups exist ──────────────────────
+  setup-gitlab:
+    runs-on: ubuntu-latest
+    outputs:
+      group_id: ${{ steps.group.outputs.group_id }}
+      subgroup_roles_id: ${{ steps.subgroups.outputs.roles_id }}
+      subgroup_collections_id: ${{ steps.subgroups.outputs.collections_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create or get top-level group
+        id: group
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          # Check if group exists
+          ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${GITLAB_USER}/${GITLAB_GROUP}', safe=''))")
+          GROUP_ID=$(curl -sf --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+            "${GITLAB_URL}/api/v4/groups/${ENCODED}" | jq -r '.id // empty')
+
+          if [ -n "$GROUP_ID" ]; then
+            echo "✅ Group '${GITLAB_GROUP}' exists (id: ${GROUP_ID})"
+          else
+            echo "📦 Creating group '${GITLAB_GROUP}'..."
+            GROUP_ID=$(curl -sf --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+              --header "Content-Type: application/json" \
+              --request POST "${GITLAB_URL}/api/v4/groups" \
+              --data "{
+                \"name\": \"Open Source Mirrors\",
+                \"path\": \"${GITLAB_GROUP}\",
+                \"visibility\": \"public\",
+                \"description\": \"Automated mirrors of open-source dependencies used by ansible-infrastructure\"
+              }" | jq -r '.id')
+            echo "✅ Created group (id: ${GROUP_ID})"
+          fi
+          echo "group_id=${GROUP_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Create or get subgroups
+        id: subgroups
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          PARENT_ID="${{ steps.group.outputs.group_id }}"
+
+          create_subgroup() {
+            local NAME="$1" PATH_SLUG="$2" DESC="$3" OUTPUT_KEY="$4"
+
+            ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${GITLAB_USER}/${GITLAB_GROUP}/${PATH_SLUG}', safe=''))")
+            SG_ID=$(curl -sf --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+              "${GITLAB_URL}/api/v4/groups/${ENCODED}" | jq -r '.id // empty')
+
+            if [ -n "$SG_ID" ]; then
+              echo "✅ Subgroup '${PATH_SLUG}' exists (id: ${SG_ID})"
+            else
+              echo "📦 Creating subgroup '${PATH_SLUG}'..."
+              SG_ID=$(curl -sf --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+                --header "Content-Type: application/json" \
+                --request POST "${GITLAB_URL}/api/v4/groups" \
+                --data "{
+                  \"name\": \"${NAME}\",
+                  \"path\": \"${PATH_SLUG}\",
+                  \"parent_id\": ${PARENT_ID},
+                  \"visibility\": \"public\",
+                  \"description\": \"${DESC}\"
+                }" | jq -r '.id')
+              echo "✅ Created subgroup (id: ${SG_ID})"
+            fi
+            echo "${OUTPUT_KEY}=${SG_ID}" >> "$GITHUB_OUTPUT"
+          }
+
+          create_subgroup "Ansible Roles" "ansible-roles" \
+            "Mirrored Ansible roles (git submodules from ansible-infrastructure)" "roles_id"
+
+          create_subgroup "Ansible Collections" "ansible-collections" \
+            "Mirrored Ansible Galaxy collections from ansible-infrastructure" "collections_id"
+
+  # ── Step 2: Build matrix ───────────────────────────────────────────────
   prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -36,54 +113,74 @@ jobs:
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
           echo "Will mirror $(echo "$MATRIX" | jq '.include | length') repositories"
 
+  # ── Step 3: Mirror each repo ───────────────────────────────────────────
   mirror:
-    needs: prepare
+    needs: [setup-gitlab, prepare]
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
       fail-fast: false
       max-parallel: 5
     steps:
-      - name: Compute target project name
+      - name: Compute target
         id: target
         run: |
           SOURCE="${{ matrix.source }}"
-          # Use the repo name as the GitLab project name (replace / with -)
-          # e.g. "ansible-collections/community.docker" -> "community.docker"
+          SUBGROUP="${{ matrix.subgroup }}"
           REPO_NAME="${SOURCE##*/}"
-          # For submodules from different orgs, prefix with org to avoid collisions
-          # e.g. "geerlingguy/ansible-role-docker" -> "ansible-role-docker"
-          # "k3s-io/k3s-ansible" -> "k3s-ansible"
-          echo "repo_name=$REPO_NAME" >> "$GITHUB_OUTPUT"
-          echo "source_url=https://github.com/${SOURCE}.git" >> "$GITHUB_OUTPUT"
-          echo "Mirroring: ${SOURCE} -> ${GITLAB_USER}/${REPO_NAME}"
 
-      - name: Create GitLab project if it doesn't exist
+          echo "repo_name=$REPO_NAME" >> "$GITHUB_OUTPUT"
+          echo "subgroup=$SUBGROUP" >> "$GITHUB_OUTPUT"
+          echo "source_url=https://github.com/${SOURCE}.git" >> "$GITHUB_OUTPUT"
+          echo "gitlab_path=${GITLAB_USER}/${GITLAB_GROUP}/${SUBGROUP}/${REPO_NAME}" >> "$GITHUB_OUTPUT"
+          echo "🔄 ${SOURCE} → ${GITLAB_GROUP}/${SUBGROUP}/${REPO_NAME}"
+
+      - name: Determine namespace ID
+        id: ns
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          SUBGROUP="${{ steps.target.outputs.subgroup }}"
+          if [ "$SUBGROUP" = "ansible-roles" ]; then
+            NS_ID="${{ needs.setup-gitlab.outputs.subgroup_roles_id }}"
+          else
+            NS_ID="${{ needs.setup-gitlab.outputs.subgroup_collections_id }}"
+          fi
+          echo "namespace_id=$NS_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitLab project if needed
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
         run: |
           REPO_NAME="${{ steps.target.outputs.repo_name }}"
+          GITLAB_PATH="${{ steps.target.outputs.gitlab_path }}"
+          NS_ID="${{ steps.ns.outputs.namespace_id }}"
           SOURCE="${{ matrix.source }}"
 
-          # Check if project exists
-          ENCODED_PATH=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${GITLAB_USER}/${REPO_NAME}', safe=''))")
+          ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${GITLAB_PATH}', safe=''))")
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-            "${GITLAB_URL}/api/v4/projects/${ENCODED_PATH}")
+            "${GITLAB_URL}/api/v4/projects/${ENCODED}")
 
           if [ "$HTTP_CODE" = "200" ]; then
-            echo "✅ Project ${GITLAB_USER}/${REPO_NAME} already exists"
+            echo "✅ Project exists: ${GITLAB_PATH}"
           else
-            echo "📦 Creating project ${GITLAB_USER}/${REPO_NAME}..."
-            curl -s --fail --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+            echo "📦 Creating project: ${GITLAB_PATH}..."
+            RESULT=$(curl -s --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
               --header "Content-Type: application/json" \
+              --request POST "${GITLAB_URL}/api/v4/projects" \
               --data "{
                 \"name\": \"${REPO_NAME}\",
                 \"path\": \"${REPO_NAME}\",
+                \"namespace_id\": ${NS_ID},
                 \"visibility\": \"public\",
-                \"description\": \"Mirror of https://github.com/${SOURCE} (auto-synced)\"
-              }" \
-              "${GITLAB_URL}/api/v4/projects" | jq -r '.web_url // .message'
+                \"description\": \"Mirror of https://github.com/${SOURCE} (auto-synced daily)\",
+                \"issues_access_level\": \"disabled\",
+                \"merge_requests_access_level\": \"disabled\",
+                \"wiki_access_level\": \"disabled\",
+                \"builds_access_level\": \"disabled\"
+              }")
+            echo "$RESULT" | jq -r '.web_url // .message'
           fi
 
       - name: Clone and push mirror
@@ -92,17 +189,24 @@ jobs:
         run: |
           SOURCE_URL="${{ steps.target.outputs.source_url }}"
           REPO_NAME="${{ steps.target.outputs.repo_name }}"
-          TARGET_URL="https://oauth2:${GITLAB_TOKEN}@gitlab.com/${GITLAB_USER}/${REPO_NAME}.git"
+          GITLAB_PATH="${{ steps.target.outputs.gitlab_path }}"
+
+          # Use credential helper to avoid URL-encoding issues with special chars in token
+          git config --global credential.helper store
+          echo "https://oauth2:${GITLAB_TOKEN}@gitlab.com" > ~/.git-credentials
 
           echo "🔄 Cloning ${SOURCE_URL} (bare)..."
           git clone --bare "$SOURCE_URL" repo.git
 
           cd repo.git
 
-          echo "🚀 Pushing mirror to GitLab..."
+          TARGET_URL="https://gitlab.com/${GITLAB_PATH}.git"
+          echo "🚀 Pushing mirror to ${TARGET_URL}..."
           git push --mirror "$TARGET_URL" 2>&1 || {
-            echo "⚠️ Mirror push failed, trying force push..."
+            echo "⚠️ Retrying with force..."
             git push --force --mirror "$TARGET_URL" 2>&1
           }
 
-          echo "✅ Done: ${REPO_NAME}"
+          # Cleanup credentials
+          rm -f ~/.git-credentials
+          echo "✅ Done: ${GITLAB_PATH}"
