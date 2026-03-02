@@ -1,0 +1,206 @@
+{
+  "gitlab_user": "Koala101",
+  "gitlab_url": "https://gitlab.com",
+  "repos": [
+    {
+      "source": "githubixx/ansible-role-wireguard",
+      "category": "submodules"
+    },
+    {
+      "source": "linux-system-roles/ssh",
+      "category": "submodules"
+    },
+    {
+      "source": "geerlingguy/ansible-role-security",
+      "category": "submodules"
+    },
+    {
+      "source": "geerlingguy/ansible-for-devops",
+      "category": "submodules"
+    },
+    {
+      "source": "geerlingguy/ansible-role-certbot",
+      "category": "submodules"
+    },
+    {
+      "source": "geerlingguy/ansible-role-mysql",
+      "category": "submodules"
+    },
+    {
+      "source": "geerlingguy/mac-dev-playbook",
+      "category": "submodules"
+    },
+    {
+      "source": "geerlingguy/ansible-role-docker",
+      "category": "submodules"
+    },
+    {
+      "source": "timothystewart6/k3s-ansible",
+      "category": "submodules"
+    },
+    {
+      "source": "k3s-io/k3s-ansible",
+      "category": "submodules"
+    },
+    {
+      "source": "geerlingguy/ansible-role-redis",
+      "category": "submodules"
+    },
+    {
+      "source": "geerlingguy/ansible-role-postgresql",
+      "category": "submodules"
+    },
+    {
+      "source": "geerlingguy/ansible-for-kubernetes",
+      "category": "submodules"
+    },
+    {
+      "source": "geerlingguy/ansible-role-backup",
+      "category": "submodules"
+    },
+    {
+      "source": "geerlingguy/dotfiles",
+      "category": "submodules"
+    },
+    {
+      "source": "geerlingguy/ansible-role-git",
+      "category": "submodules"
+    },
+    {
+      "source": "lae/ansible-role-proxmox",
+      "category": "submodules"
+    },
+    {
+      "source": "arensb/ansible-truenas",
+      "category": "submodules"
+    },
+    {
+      "source": "tsailiming/ansible-hyperv",
+      "category": "submodules"
+    },
+    {
+      "source": "ansible-collections/amazon.aws",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/ansible.netcommon",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/ansible.posix",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/ansible.utils",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/ansible.windows",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/azure",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.aws",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.crypto",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.digitalocean",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.dns",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.docker",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.general",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.grafana",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.hashi_vault",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.hrobot",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.libvirt",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.mongodb",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.mysql",
+      "category": "collections"
+    },
+    {
+      "source": "openshift/community.okd",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.postgresql",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.proxmox",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.proxysql",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.rabbitmq",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.routeros",
+      "category": "collections"
+    },
+    {
+      "source": "sap-linuxlab/community.sap_libs",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.sops",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.vmware",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.windows",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/community.zabbix",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/google.cloud",
+      "category": "collections"
+    },
+    {
+      "source": "ansible-collections/kubernetes.core",
+      "category": "collections"
+    }
+  ]
+}

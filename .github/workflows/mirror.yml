@@ -1,0 +1,108 @@
+name: Mirror to GitLab
+
+on:
+  schedule:
+    # Run daily at 03:00 UTC
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      repo_filter:
+        description: "Optional: mirror only repos matching this substring (leave empty for all)"
+        required: false
+        default: ""
+
+env:
+  GITLAB_URL: https://gitlab.com
+  GITLAB_USER: Koala101
+
+jobs:
+  # Build the matrix from mirrors.json
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build matrix
+        id: set-matrix
+        run: |
+          FILTER="${{ github.event.inputs.repo_filter }}"
+          if [ -n "$FILTER" ]; then
+            MATRIX=$(jq -c --arg f "$FILTER" '{include: [.repos[] | select(.source | contains($f))]}' mirrors.json)
+          else
+            MATRIX=$(jq -c '{include: .repos}' mirrors.json)
+          fi
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "Will mirror $(echo "$MATRIX" | jq '.include | length') repositories"
+
+  mirror:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      fail-fast: false
+      max-parallel: 5
+    steps:
+      - name: Compute target project name
+        id: target
+        run: |
+          SOURCE="${{ matrix.source }}"
+          # Use the repo name as the GitLab project name (replace / with -)
+          # e.g. "ansible-collections/community.docker" -> "community.docker"
+          REPO_NAME="${SOURCE##*/}"
+          # For submodules from different orgs, prefix with org to avoid collisions
+          # e.g. "geerlingguy/ansible-role-docker" -> "ansible-role-docker"
+          # "k3s-io/k3s-ansible" -> "k3s-ansible"
+          echo "repo_name=$REPO_NAME" >> "$GITHUB_OUTPUT"
+          echo "source_url=https://github.com/${SOURCE}.git" >> "$GITHUB_OUTPUT"
+          echo "Mirroring: ${SOURCE} -> ${GITLAB_USER}/${REPO_NAME}"
+
+      - name: Create GitLab project if it doesn't exist
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          REPO_NAME="${{ steps.target.outputs.repo_name }}"
+          SOURCE="${{ matrix.source }}"
+
+          # Check if project exists
+          ENCODED_PATH=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${GITLAB_USER}/${REPO_NAME}', safe=''))")
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+            "${GITLAB_URL}/api/v4/projects/${ENCODED_PATH}")
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Project ${GITLAB_USER}/${REPO_NAME} already exists"
+          else
+            echo "📦 Creating project ${GITLAB_USER}/${REPO_NAME}..."
+            curl -s --fail --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+              --header "Content-Type: application/json" \
+              --data "{
+                \"name\": \"${REPO_NAME}\",
+                \"path\": \"${REPO_NAME}\",
+                \"visibility\": \"public\",
+                \"description\": \"Mirror of https://github.com/${SOURCE} (auto-synced)\"
+              }" \
+              "${GITLAB_URL}/api/v4/projects" | jq -r '.web_url // .message'
+          fi
+
+      - name: Clone and push mirror
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          SOURCE_URL="${{ steps.target.outputs.source_url }}"
+          REPO_NAME="${{ steps.target.outputs.repo_name }}"
+          TARGET_URL="https://oauth2:${GITLAB_TOKEN}@gitlab.com/${GITLAB_USER}/${REPO_NAME}.git"
+
+          echo "🔄 Cloning ${SOURCE_URL} (bare)..."
+          git clone --bare "$SOURCE_URL" repo.git
+
+          cd repo.git
+
+          echo "🚀 Pushing mirror to GitLab..."
+          git push --mirror "$TARGET_URL" 2>&1 || {
+            echo "⚠️ Mirror push failed, trying force push..."
+            git push --force --mirror "$TARGET_URL" 2>&1
+          }
+
+          echo "✅ Done: ${REPO_NAME}"
