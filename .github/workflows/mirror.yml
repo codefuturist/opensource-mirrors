@@ -13,7 +13,6 @@ on:
 
 env:
   GITLAB_URL: https://gitlab.com
-  GITLAB_USER: Koala101
   GITLAB_GROUP: opensource-mirrors
 
 jobs:
@@ -32,25 +31,17 @@ jobs:
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
         run: |
-          # Check if group exists
-          ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${GITLAB_USER}/${GITLAB_GROUP}', safe=''))")
+          # Top-level group must be created manually on GitLab.com free tier
+          # This step just looks it up
+          ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${GITLAB_GROUP}', safe=''))")
           GROUP_ID=$(curl -sf --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
             "${GITLAB_URL}/api/v4/groups/${ENCODED}" | jq -r '.id // empty')
 
           if [ -n "$GROUP_ID" ]; then
             echo "✅ Group '${GITLAB_GROUP}' exists (id: ${GROUP_ID})"
           else
-            echo "📦 Creating group '${GITLAB_GROUP}'..."
-            GROUP_ID=$(curl -sf --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-              --header "Content-Type: application/json" \
-              --request POST "${GITLAB_URL}/api/v4/groups" \
-              --data "{
-                \"name\": \"Open Source Mirrors\",
-                \"path\": \"${GITLAB_GROUP}\",
-                \"visibility\": \"public\",
-                \"description\": \"Automated mirrors of open-source dependencies used by ansible-infrastructure\"
-              }" | jq -r '.id')
-            echo "✅ Created group (id: ${GROUP_ID})"
+            echo "❌ Group '${GITLAB_GROUP}' not found. Create it manually at ${GITLAB_URL}/groups/new"
+            exit 1
           fi
           echo "group_id=${GROUP_ID}" >> "$GITHUB_OUTPUT"
 
@@ -64,7 +55,7 @@ jobs:
           create_subgroup() {
             local NAME="$1" PATH_SLUG="$2" DESC="$3" OUTPUT_KEY="$4"
 
-            ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${GITLAB_USER}/${GITLAB_GROUP}/${PATH_SLUG}', safe=''))")
+            ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${GITLAB_GROUP}/${PATH_SLUG}', safe=''))")
             SG_ID=$(curl -sf --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
               "${GITLAB_URL}/api/v4/groups/${ENCODED}" | jq -r '.id // empty')
 
@@ -79,7 +70,7 @@ jobs:
                   \"name\": \"${NAME}\",
                   \"path\": \"${PATH_SLUG}\",
                   \"parent_id\": ${PARENT_ID},
-                  \"visibility\": \"public\",
+                  \"visibility\": \"private\",
                   \"description\": \"${DESC}\"
                 }" | jq -r '.id')
               echo "✅ Created subgroup (id: ${SG_ID})"
@@ -133,7 +124,7 @@ jobs:
           echo "repo_name=$REPO_NAME" >> "$GITHUB_OUTPUT"
           echo "subgroup=$SUBGROUP" >> "$GITHUB_OUTPUT"
           echo "source_url=https://github.com/${SOURCE}.git" >> "$GITHUB_OUTPUT"
-          echo "gitlab_path=${GITLAB_USER}/${GITLAB_GROUP}/${SUBGROUP}/${REPO_NAME}" >> "$GITHUB_OUTPUT"
+          echo "gitlab_path=${GITLAB_GROUP}/${SUBGROUP}/${REPO_NAME}" >> "$GITHUB_OUTPUT"
           echo "🔄 ${SOURCE} → ${GITLAB_GROUP}/${SUBGROUP}/${REPO_NAME}"
 
       - name: Determine namespace ID
@@ -174,7 +165,7 @@ jobs:
                 \"name\": \"${REPO_NAME}\",
                 \"path\": \"${REPO_NAME}\",
                 \"namespace_id\": ${NS_ID},
-                \"visibility\": \"public\",
+                \"visibility\": \"private\",
                 \"description\": \"Mirror of https://github.com/${SOURCE} (auto-synced daily)\",
                 \"issues_access_level\": \"disabled\",
                 \"merge_requests_access_level\": \"disabled\",
